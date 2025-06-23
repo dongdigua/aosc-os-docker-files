@@ -18,11 +18,22 @@ jobs:
       fail-fast: false
       matrix:
     #     variant: ["slim", "base"]
-        arch: ["amd64", "arm64"]
+        arch: ["amd64"]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up aoscbootstrap # 偷包
+        run: |
+          sudo apt update
+          sudo apt install nettle-dev lzma zlib1g openssl systemd-container libsystemd-dev
+          curl -O https://repo.aosc.io/debs/pool/stable/main/a/aoscbootstrap_0.9.0-0_amd64.deb
+          sudo dpkg --force-depends -i aoscbootstrap_0.9.0-0_amd64.deb
+
+      - name: aoscbootstrap
+        run: |
+          sudo aoscbootstrap -a ${{ matrix.arch }} -c /usr/share/aoscbootstrap/config/aosc-mainline.toml --export-tar-gz ${{ matrix.arch }}.tgz stable rootfs-${{ matrix.arch }}
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -42,13 +53,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: aoscbootstrap
-        run: |
-          sudo apt install clang llvm pkg-config nettle-dev liblzma-dev zlib1g-dev
-          CMAKE_POLICY_VERSION_MINIMUM=3.5 cargo install --git https://github.com/AOSC-Dev/aoscbootstrap --tag v0.9.0
-          curl -O https://raw.githubusercontent.com/AOSC-Dev/aoscbootstrap/refs/heads/master/config/aosc-mainline.toml
-          aoscbootstrap -a ${{ matrix.arch }} -c aosc-mainline.toml --export-tar-gz ${{ matrix.arch }}.tgz
 
       - name: Build and push
         uses: docker/build-push-action@v6
