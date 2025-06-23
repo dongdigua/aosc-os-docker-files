@@ -4,4 +4,4 @@ ARG TARGETOS
 ARG TARGETARCH
 ADD "${TARGETARCH}.tar" /
 CMD ["/bin/bash"]
-#RUN sed -i 's/*               -       nice/#*               -       nice/' /etc/security/limits.conf
+RUN sed -i 's/no_check_dbus = false/no_check_dbus = true/' /etc/oma.toml
