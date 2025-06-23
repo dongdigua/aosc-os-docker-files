@@ -3,7 +3,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: dongdigua/aosc-os
 
 permissions:
     contents: read
@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
     #     variant: ["slim", "base"]
-        arch: ["amd64"]
+        arch: ["amd64", "arm64"]
 
     steps:
       - name: Checkout repository
@@ -37,9 +37,12 @@ jobs:
           CMAKE_POLICY_VERSION_MINIMUM=3.5 cargo b
           cd ..
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: aoscbootstrap
         run: |
-          sudo ./aoscbootstrap/target/debug/aoscbootstrap -a ${{ matrix.arch }} -c /usr/share/aoscbootstrap/config/aosc-mainline.toml --export-tar-gz ${{ matrix.arch }}.tgz stable rootfs-${{ matrix.arch }}
+          sudo ./aoscbootstrap/target/debug/aoscbootstrap -a ${{ matrix.arch }} -c /usr/share/aoscbootstrap/config/aosc-mainline.toml stable rootfs-${{ matrix.arch }}
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -53,9 +56,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
             images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
