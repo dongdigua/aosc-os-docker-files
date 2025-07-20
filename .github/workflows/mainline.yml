@@ -28,19 +28,15 @@ jobs:
           sudo apt update
           sudo apt install nettle-dev liblzma-dev zlib1g-dev
           curl -O https://repo.aosc.io/debs/pool/stable/main/a/arch-chroot_28+mirrorlist20231113+pacman6.0.1-0_noarch.deb
-          curl -O https://repo.aosc.io/debs/pool/stable/main/a/aoscbootstrap_0.9.0-0_amd64.deb
+          curl -O https://repo.aosc.io/debs/pool/stable/main/a/aoscbootstrap_0.10.2-0_amd64.deb
           sudo dpkg --force-depends -i *.deb
-          git clone --branch v0.10.0 --depth 1 https://github.com/AOSC-Dev/aoscbootstrap
-          cd aoscbootstrap
-          CMAKE_POLICY_VERSION_MINIMUM=3.5 cargo b
-          cd ..
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: aoscbootstrap
         run: |
-          sudo ./aoscbootstrap/target/debug/aoscbootstrap -a ${{ matrix.arch }} -c /usr/share/aoscbootstrap/config/aosc-mainline.toml --export-tar-xz ${{ matrix.arch }}.tar.xz --branch stable --target rootfs
+          sudo aoscbootstrap -a ${{ matrix.arch }} -c /usr/share/aoscbootstrap/config/aosc-mainline.toml --export-tar-xz ${{ matrix.arch }}.tar.xz --branch stable --target rootfs
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
