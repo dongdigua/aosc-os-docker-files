@@ -25,8 +25,7 @@ function get_buildkit() {
   echo "${HASH} ${OUTPUT}" | sha256sum -c -
 }
 
-#ARCHS=(amd64 arm64 riscv64 loongarch64)
-ARCHS=(arm64)
+ARCHS=(amd64 arm64 riscv64 loongarch64)
 
 for arch in "${ARCHS[@]}"
 do
