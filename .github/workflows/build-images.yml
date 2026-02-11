@@ -1,6 +1,7 @@
 name: Build AOSC OS Docker Images
 
 on:
+  push:
   schedule:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
@@ -9,7 +10,7 @@ on:
       force_build:
         description: 'Force build all images regardless of existing tags'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 env:
@@ -134,16 +135,12 @@ jobs:
           # Generate primary tag with date
           VERSIONED_TAG="${VARIANT_LOWER}-${{ steps.release-info.outputs.date }}-${{ matrix.aosc_arch }}"
           
-          # Also create simple variant tag
-          SIMPLE_TAG="${VARIANT_LOWER}"
-          
           # Generate complete tags list
-          TAGS="${{ env.REGISTRY }}/${REPOSITORY}:${VERSIONED_TAG}
-          ${{ env.REGISTRY }}/${REPOSITORY}:${SIMPLE_TAG}"
+          # We ONLY push the arch-specific tag here. 
+          TAGS="${{ env.REGISTRY }}/${REPOSITORY}:${VERSIONED_TAG}"
           
           echo "repository=${REPOSITORY}" >> $GITHUB_OUTPUT
           echo "versioned_tag=${VERSIONED_TAG}" >> $GITHUB_OUTPUT
-          echo "simple_tag=${SIMPLE_TAG}" >> $GITHUB_OUTPUT
           echo "tags<<EOF" >> $GITHUB_OUTPUT
           echo "${TAGS}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -166,10 +163,10 @@ jobs:
           cat > Dockerfile << EOF
           FROM scratch
           LABEL maintainer="AOSC-dev"
-          ADD "https://releases.aosc.io/${{ steps.release-info.outputs.tarball_path }}" /
+          ADD --unpack=true --checksum="sha256:${{ steps.release-info.outputs.sha256sum }}" "https://releases.aosc.io/${{ steps.release-info.outputs.tarball_path }}" /
           CMD ["/bin/bash"]
           ARG CONT_IMG_VER
-          ENV CONT_IMG_VER ${{ steps.release-info.outputs.date }}
+          ENV CONT_IMG_VER=${{ steps.release-info.outputs.date }}
           EOF
           
           echo "Generated Dockerfile:"
@@ -184,6 +181,9 @@ jobs:
           platforms: ${{ matrix.docker_platform }}
           push: true
           tags: ${{ steps.image-info.outputs.tags }}
+          # https://github.com/docker/build-push-action/issues/1279
+          provenance: false
+          sbom: false
           labels: |
             org.opencontainers.image.title=AOSC OS ${{ matrix.variant }}
             org.opencontainers.image.description=AOSC OS ${{ matrix.variant }} container image for ${{ matrix.aosc_arch }}
@@ -218,9 +218,15 @@ jobs:
           
           echo "Fetching tags for: ${FULL_REPO}"
           
+          GHCR_TOKEN=$(echo ${{ secrets.GITHUB_TOKEN }} | base64) # weird
+
+          TAG_LIST=$(curl -s -H "Authorization: Bearer $GHCR_TOKEN" \
+            "https://${{ env.REGISTRY }}/v2/${REPOSITORY}/tags/list")
+
+          echo $TAG_LIST
+
           # Get all tags from the registry using the GitHub Container Registry API
-          TAGS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://${FULL_REPO}/v2/${REPOSITORY}/tags/list" | \
+          TAGS=$(echo $TAG_LIST | \
             jq -r '.tags[]? // empty' | \
             grep -E '^(base|buildkit)-[0-9]{8}-(amd64|arm64|riscv64|ppc64el|loongarch64|loongson3)$' || echo "")
           
@@ -228,7 +234,7 @@ jobs:
           echo "$TAGS" | tr ' ' '\n' | sort
           
           # Group tags by variant and date
-          MANIFEST_GROUPS=""
+          declare -A TAG_GROUPS
           
           for TAG in $TAGS; do
             # Parse tag format: variant-date-arch
@@ -239,13 +245,19 @@ jobs:
               
               GROUP_KEY="${VARIANT}-${DATE}"
               
-              # Add to manifest groups
-              if ! echo "$MANIFEST_GROUPS" | grep -q "^${GROUP_KEY}:"; then
-                MANIFEST_GROUPS="${MANIFEST_GROUPS}${GROUP_KEY}:${FULL_REPO}:${TAG}"$'\n'
+              # Add to manifest groups using associative array
+              if [ -z "${TAG_GROUPS[$GROUP_KEY]}" ]; then
+                TAG_GROUPS[$GROUP_KEY]="${FULL_REPO}:${TAG}"
               else
-                MANIFEST_GROUPS=$(echo "$MANIFEST_GROUPS" | sed "s|^${GROUP_KEY}:\(.*\)|${GROUP_KEY}:\1 ${FULL_REPO}:${TAG}|")
+                TAG_GROUPS[$GROUP_KEY]="${TAG_GROUPS[$GROUP_KEY]} ${FULL_REPO}:${TAG}"
               fi
             fi
+          done
+          
+          # Convert array to string format for the next loop
+          MANIFEST_GROUPS=""
+          for KEY in "${!TAG_GROUPS[@]}"; do
+            MANIFEST_GROUPS="${MANIFEST_GROUPS}${KEY}:${TAG_GROUPS[$KEY]}"$'\n'
           done
           
           echo "Manifest groups to create:"
@@ -264,7 +276,7 @@ jobs:
               echo "Images: ${IMAGES}"
               
               # Create versioned manifest
-              if docker manifest create "${FULL_REPO}:${VERSIONED_TAG}" ${IMAGES} 2>/dev/null; then
+              if docker manifest create "${FULL_REPO}:${VERSIONED_TAG}" ${IMAGES}; then
                 docker manifest push "${FULL_REPO}:${VERSIONED_TAG}"
                 echo "✓ Created versioned manifest: ${VERSIONED_TAG}"
               else
@@ -272,7 +284,7 @@ jobs:
               fi
               
               # Create or update simple variant manifest (latest for this variant)
-              if docker manifest create "${FULL_REPO}:${SIMPLE_TAG}" ${IMAGES} --amend 2>/dev/null; then
+              if docker manifest create "${FULL_REPO}:${SIMPLE_TAG}" ${IMAGES} --amend; then
                 docker manifest push "${FULL_REPO}:${SIMPLE_TAG}"
                 echo "✓ Updated simple manifest: ${SIMPLE_TAG}"
               else
