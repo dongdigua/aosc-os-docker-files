@@ -167,6 +167,7 @@ jobs:
           CMD ["/bin/bash"]
           ARG CONT_IMG_VER
           ENV CONT_IMG_VER=${{ steps.release-info.outputs.date }}
+          RUN sed -i 's/no_check_dbus = false/no_check_dbus = true/' /etc/oma.toml
           EOF
           
           echo "Generated Dockerfile:"
