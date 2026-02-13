@@ -30,23 +30,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Base variant images
-          - variant: "Base"
+          # Conatiner variant images
+          - variant: "Container"
             aosc_arch: "amd64"
             docker_platform: "linux/amd64"
-          - variant: "Base"
+          - variant: "Container"
             aosc_arch: "arm64"
             docker_platform: "linux/arm64"
-          - variant: "Base"
+          - variant: "Container"
             aosc_arch: "riscv64"
             docker_platform: "linux/riscv64"
-          - variant: "Base"
+          - variant: "Container"
             aosc_arch: "ppc64el"
             docker_platform: "linux/ppc64le"
-          - variant: "Base"
+          - variant: "Container"
             aosc_arch: "loongarch64"
             docker_platform: "linux/loong64"
-          - variant: "Base"
+          - variant: "Container"
             aosc_arch: "loongson3"
             docker_platform: "linux/mips64le/loongson3"
           
@@ -285,9 +285,7 @@ jobs:
                 exit 1
               fi
 
-              # Update latest tag if variant is "base"
-              if [ "$VARIANT" = "base" ]; then
-                echo "Updating latest tag to point to base..."
+              if [ "$VARIANT" = "container" ]; then
                 if docker manifest create "${FULL_REPO}:latest" ${IMAGES} --amend; then
                   docker manifest push "${FULL_REPO}:latest"
                   echo "[+] Updated latest manifest"
