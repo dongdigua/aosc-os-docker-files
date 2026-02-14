@@ -28,45 +28,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        variant: ["Container", "BuildKit"]
+        aosc_arch: ["amd64", "arm64", "riscv64", "ppc64el", "loongarch64", "loongson3"]
         include:
-          # Conatiner variant images
-          - variant: "Container"
-            aosc_arch: "amd64"
+          - aosc_arch: "amd64"
             docker_platform: "linux/amd64"
-          - variant: "Container"
-            aosc_arch: "arm64"
+          - aosc_arch: "arm64"
             docker_platform: "linux/arm64"
-          - variant: "Container"
-            aosc_arch: "riscv64"
+          - aosc_arch: "riscv64"
             docker_platform: "linux/riscv64"
-          - variant: "Container"
-            aosc_arch: "ppc64el"
+          - aosc_arch: "ppc64el"
             docker_platform: "linux/ppc64le"
-          - variant: "Container"
-            aosc_arch: "loongarch64"
+          - aosc_arch: "loongarch64"
             docker_platform: "linux/loong64"
-          - variant: "Container"
-            aosc_arch: "loongson3"
-            docker_platform: "linux/mips64le/loongson3"
-          
-          # BuildKit variant images
-          - variant: "BuildKit"
-            aosc_arch: "amd64"
-            docker_platform: "linux/amd64"
-          - variant: "BuildKit"
-            aosc_arch: "arm64"
-            docker_platform: "linux/arm64"
-          - variant: "BuildKit"
-            aosc_arch: "riscv64"
-            docker_platform: "linux/riscv64"
-          - variant: "BuildKit"
-            aosc_arch: "ppc64el"
-            docker_platform: "linux/ppc64le"
-          - variant: "BuildKit"
-            aosc_arch: "loongarch64"
-            docker_platform: "linux/loong64"
-          - variant: "BuildKit"
-            aosc_arch: "loongson3"
+          - aosc_arch: "loongson3"
             docker_platform: "linux/mips64le/loongson3"
     
     steps:
