@@ -16,7 +16,6 @@ on:
 env:
   REGISTRY: docker.io
   DOCKER_REPOSITORY: ${{ vars.DOCKER_USERNAME }}/aosc-os
-  RELEASES_URL: https://releases.aosc.io/manifest/recipe.json
 
 jobs:
   check-and-build:
@@ -76,40 +75,7 @@ jobs:
 
       - name: Check for latest release
         id: release-info
-        run: |
-          VARIANT_NAME="${{ matrix.variant }}"
-          
-          echo "Checking for variant: ${VARIANT_NAME}, architecture: ${{ matrix.aosc_arch }}"
-          
-          MANIFEST=$(curl -s "$RELEASES_URL")
-          
-          LATEST_RELEASE=$(echo "$MANIFEST" | jq --arg variant "$VARIANT_NAME" --arg arch "${{ matrix.aosc_arch }}" '
-            [.variants[] | 
-             select(.name == $variant) |
-             .tarballs[] |
-             select(.arch == $arch) |
-             select(.date != null)] |
-            sort_by(.date) |
-            last
-          ')
-          
-          if [ "$LATEST_RELEASE" = "null" ] || [ -z "$LATEST_RELEASE" ]; then
-            echo "No release found for variant: ${VARIANT_NAME}, arch: ${{ matrix.aosc_arch }}"
-            echo "found=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-          DATE=$(echo "$LATEST_RELEASE" | jq -r '.date')
-          TARBALL_PATH=$(echo "$LATEST_RELEASE" | jq -r '.path')
-          SHA256SUM=$(echo "$LATEST_RELEASE" | jq -r '.sha256sum')
-          
-          echo "Found release: $DATE"
-          echo "Tarball path: $TARBALL_PATH"
-          
-          echo "found=true" >> $GITHUB_OUTPUT
-          echo "date=${DATE}" >> $GITHUB_OUTPUT
-          echo "tarball_path=${TARBALL_PATH}" >> $GITHUB_OUTPUT
-          echo "sha256sum=${SHA256SUM}" >> $GITHUB_OUTPUT
+        run: ./check_release.sh ${{ matrix.variant }} ${{ matrix.aosc_arch }}
 
       - name: Generate image name and tags
         id: image-info
@@ -216,6 +182,9 @@ jobs:
       contents: read
     
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -234,67 +203,4 @@ jobs:
           merge-multiple: true
 
       - name: Create manifests
-        run: |
-          set -euo pipefail
-          FULL_REPO="${{ env.REGISTRY }}/${{ env.DOCKER_REPOSITORY }}"
-          
-          echo "Gathering tags from artifacts..."
-
-          if [ -d "downloaded-tags" ]; then
-             TAGS=$(cat downloaded-tags/*)
-          else
-             echo "[-] No tags found via artifacts, skipping."
-             exit 0
-          fi
-          
-          echo "Found tags:"
-          echo "$TAGS" | sort
-          
-          TAG_GROUPS=$(echo "$TAGS" | grep -Eo '^[[:alpha:]]+-[[:digit:]]{8}' | uniq)
-
-          echo "Tag groups:"
-          echo "$TAG_GROUPS"
-          
-          # Create manifests for each group
-          echo "$TAG_GROUPS" | while IFS= read -r GROUP_KEY; do
-            IMAGES=$(echo "$TAGS" | grep "$GROUP_KEY" | sed "s!^!$FULL_REPO:!" | tr '\n' ' ')
-            if [ -n "$GROUP_KEY" ] && [ -n "$IMAGES" ]; then
-              VARIANT=$(echo "$GROUP_KEY" | cut -d'-' -f1)
-              
-              VERSIONED_TAG="${GROUP_KEY}"
-              SIMPLE_TAG="${VARIANT}"
-              
-              echo "Creating manifest for: ${VERSIONED_TAG}"
-              echo "Images: ${IMAGES}"
-              
-              # Create versioned manifest
-              if docker manifest create "${FULL_REPO}:${VERSIONED_TAG}" ${IMAGES}; then
-                docker manifest push "${FULL_REPO}:${VERSIONED_TAG}"
-                echo "[+] Created versioned manifest: ${VERSIONED_TAG}"
-              else
-                echo "[x] Failed to create versioned manifest: ${VERSIONED_TAG}"
-                exit 1
-              fi
-              
-              # Create or update simple variant manifest (latest for this variant)
-              if docker manifest create "${FULL_REPO}:${SIMPLE_TAG}" ${IMAGES} --amend; then
-                docker manifest push "${FULL_REPO}:${SIMPLE_TAG}"
-                echo "[+] Updated simple manifest: ${SIMPLE_TAG}"
-              else
-                echo "[x] Failed to create simple manifest: ${SIMPLE_TAG}"
-                exit 1
-              fi
-
-              if [ "$VARIANT" = "container" ]; then
-                if docker manifest create "${FULL_REPO}:latest" ${IMAGES} --amend; then
-                  docker manifest push "${FULL_REPO}:latest"
-                  echo "[+] Updated latest manifest"
-                else
-                  echo "[x] Failed to update latest manifest"
-                  exit 1
-                fi
-              fi
-            fi
-          done
-          
-          echo "Manifest creation completed"
+        run: ./create_manifest.sh "${{ env.REGISTRY }}/${{ env.DOCKER_REPOSITORY }}"
