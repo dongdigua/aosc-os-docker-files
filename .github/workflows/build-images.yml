@@ -156,7 +156,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ vars.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          password: ${{ secrets.DOCKER_PAT }}
 
       - name: Create Dockerfile
         if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
@@ -224,7 +224,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ vars.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          password: ${{ secrets.DOCKER_PAT }}
 
       - name: Download tag artifacts
         uses: actions/download-artifact@v4
