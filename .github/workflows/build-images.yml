@@ -1,0 +1,181 @@
+name: Build AOSC OS Docker Images
+
+on:
+  push:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build all images regardless of existing tags'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: docker.io
+  DOCKER_REPOSITORY: ${{ vars.DOCKER_USERNAME }}/aosc-os
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ["Container", "BuildKit"]
+        aosc_arch: ["amd64", "arm64", "riscv64", "ppc64el", "loongarch64", "loongson3"]
+        include:
+          - aosc_arch: "amd64"
+            docker_platform: "linux/amd64"
+          - aosc_arch: "arm64"
+            docker_platform: "linux/arm64"
+          - aosc_arch: "riscv64"
+            docker_platform: "linux/riscv64"
+          - aosc_arch: "ppc64el"
+            docker_platform: "linux/ppc64le"
+          - aosc_arch: "loongarch64"
+            docker_platform: "linux/loong64"
+          - aosc_arch: "loongson3"
+            docker_platform: "linux/mips64le/loongson3"
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for latest release
+        id: release-info
+        run: ./check_release.sh ${{ matrix.variant }} ${{ matrix.aosc_arch }}
+
+      - name: Generate image name and tags
+        id: image-info
+        if: steps.release-info.outputs.found == 'true'
+        run: |
+          # Convert variant to lowercase for tag
+          VARIANT_LOWER=$(echo "${{ matrix.variant }}" | tr '[:upper:]' '[:lower:]')
+          
+          # Generate primary tag with date
+          VERSIONED_TAG="${VARIANT_LOWER}-${{ steps.release-info.outputs.date }}-${{ matrix.aosc_arch }}"
+          
+          # Generate complete tags list
+          # We ONLY push the arch-specific tag here. 
+          TAGS="${{ env.REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:${VERSIONED_TAG}"
+          
+          echo "versioned_tag=${VERSIONED_TAG}" >> $GITHUB_OUTPUT
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "${TAGS}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "Will build with tags:"
+          echo "${TAGS}"
+
+      - name: Check if Docker tag exists
+        id: check-tag
+        if: steps.release-info.outputs.found == 'true'
+        uses: tyriis/docker-image-tag-exists@v2.0.1
+        with:
+          registry: ${{ env.REGISTRY }}
+          repository: ${{ env.DOCKER_REPOSITORY }}
+          tag: ${{ steps.image-info.outputs.versioned_tag }}
+
+      - name: Set up QEMU
+        if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PAT }}
+
+      - name: Create Dockerfile
+        if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
+        run: |
+          cat > Dockerfile << EOF
+          FROM scratch
+          LABEL maintainer="AOSC-dev"
+          ADD --unpack=true --checksum="sha256:${{ steps.release-info.outputs.sha256sum }}" "https://releases.aosc.io/${{ steps.release-info.outputs.tarball_path }}" /
+          CMD ["/bin/bash"]
+          ARG CONT_IMG_VER
+          ENV CONT_IMG_VER=${{ steps.release-info.outputs.date }}
+          RUN sed -i 's/no_check_dbus = false/no_check_dbus = true/' /etc/oma.toml
+          EOF
+          
+          echo "Generated Dockerfile:"
+          cat Dockerfile
+
+      - name: Build and push Docker image
+        if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.docker_platform }}
+          push: true
+          tags: ${{ steps.image-info.outputs.tags }}
+          # https://github.com/docker/build-push-action/issues/1279
+          provenance: false
+          sbom: false
+          labels: |
+            org.opencontainers.image.title=AOSC OS ${{ matrix.variant }}
+            org.opencontainers.image.description=AOSC OS ${{ matrix.variant }} container image for ${{ matrix.aosc_arch }}
+            org.opencontainers.image.version=${{ steps.release-info.outputs.date }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+
+      - name: Save tag info
+        if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
+        run: |
+          mkdir -p tags
+          echo "${{ steps.image-info.outputs.versioned_tag }}" > tags/${{ steps.image-info.outputs.versioned_tag }}
+
+      - name: Upload tag artifact
+        if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
+        uses: actions/upload-artifact@v4
+        with:
+          name: tag-${{ matrix.variant }}-${{ matrix.aosc_arch }}
+          path: tags/
+          retention-days: 1
+
+  create-manifests:
+    needs: check-and-build
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      packages: write
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PAT }}
+
+      - name: Download tag artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tag-*
+          path: downloaded-tags
+          merge-multiple: true
+
+      - name: Create manifests
+        run: ./create_manifest.sh "${{ env.REGISTRY }}/${{ env.DOCKER_REPOSITORY }}"
