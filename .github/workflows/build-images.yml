@@ -15,7 +15,6 @@ on:
 
 env:
   REGISTRY: docker.io
-  DOCKER_REPOSITORY: ${{ vars.DOCKER_USERNAME }}/aosc-os
 
 jobs:
   check-and-build:
@@ -64,7 +63,7 @@ jobs:
           
           # Generate complete tags list
           # We ONLY push the arch-specific tag here. 
-          TAGS="${{ env.REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:${VERSIONED_TAG}"
+          TAGS="${{ env.REGISTRY }}/${{ vars.DOCKER_REPO }}:${VERSIONED_TAG}"
           
           echo "versioned_tag=${VERSIONED_TAG}" >> $GITHUB_OUTPUT
           echo "tags<<EOF" >> $GITHUB_OUTPUT
@@ -80,7 +79,7 @@ jobs:
         uses: tyriis/docker-image-tag-exists@v2.0.1
         with:
           registry: ${{ env.REGISTRY }}
-          repository: ${{ env.DOCKER_REPOSITORY }}
+          repository: ${{ vars.DOCKER_REPO }}
           tag: ${{ steps.image-info.outputs.versioned_tag }}
 
       - name: Set up QEMU
@@ -96,7 +95,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ vars.DOCKER_USERNAME }}
+          username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PAT }}
 
       - name: Create Dockerfile
@@ -167,7 +166,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ vars.DOCKER_USERNAME }}
+          username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PAT }}
 
       - name: Download tag artifacts
@@ -178,4 +177,4 @@ jobs:
           merge-multiple: true
 
       - name: Create manifests
-        run: ./create_manifest.sh "${{ env.REGISTRY }}/${{ env.DOCKER_REPOSITORY }}"
+        run: ./create_manifest.sh "${{ env.REGISTRY }}/${{ vars.DOCKER_REPO }}"
