@@ -116,7 +116,7 @@ jobs:
 
       - name: Build and push Docker image
         if: steps.release-info.outputs.found == 'true' && (steps.check-tag.outputs.tag == 'not found' || github.event.inputs.force_build == 'true')
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
