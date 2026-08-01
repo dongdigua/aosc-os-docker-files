@@ -76,7 +76,7 @@ jobs:
       - name: Check if Docker tag exists
         id: check-tag
         if: steps.release-info.outputs.found == 'true'
-        uses: tyriis/docker-image-tag-exists@v2.0.1
+        uses: tyriis/docker-image-tag-exists@v2026.6.0
         with:
           registry: ${{ env.REGISTRY }}
           repository: ${{ vars.DOCKER_REPO }}
